@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# EGG-BOT 런타임 데이터 / 캐시 (커밋하지 않음)
+data/*.json
+!data/.gitkeep
+utils/tts/
+.env
