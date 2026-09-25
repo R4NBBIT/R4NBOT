@@ -220,6 +220,5 @@ __marimo__/
 # EGG-BOT 런타임 데이터 / 캐시 (커밋하지 않음)
 data/*.json
 !data/.gitkeep
-core/menu.txt
 utils/tts/
 .env
