@@ -32,6 +32,7 @@ class MococoBot(commands.Bot):
             "cogs.menu",
             "cogs.tts",
             "cogs.raid_schedule",
+            "cogs.help",
         ]
 
         for ext in extensions:
