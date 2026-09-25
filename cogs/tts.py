@@ -227,15 +227,6 @@ class TTSCog(commands.Cog):
             ephemeral=True
         )
 
-        engine_id = voice
-
-        tts_engine_manager.set_engine(user_id, engine_id)
-
-        await interaction.followup.send(
-            f"✅ 엔진이 **{engine_id}** ({self._engine_desc(engine_id)}) 으로 설정되었습니다.",
-            ephemeral=True
-        )
-
     @app_commands.command(name="tts", description="계란봇 TTS 채널을 지정해요.")
     @app_commands.describe(채널="TTS를 사용할 채널을 선택하세요.")
     @app_commands.default_permissions(administrator=True)
