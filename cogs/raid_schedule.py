@@ -22,6 +22,7 @@ from core.raid_data import (
     get_party_slots,
 )
 from core.raid_channel import raid_channel_manager
+from core.raid_notify import raid_notify_manager
 from core.config import SUPPORTER_CLASSES
 from core.lostark_api import get_character_basic, LostArkAPIError, LostArkCharacterNotFoundError
 
@@ -1963,6 +1964,24 @@ class RaidScheduleCog(commands.Cog):
 
         self.raids[str(message.id)] = entry
         _save_raids(self.raids)
+
+        # 아무도 멘션하지 않아도 스레드에 활동(댓글)이 하나 있으면
+        # 디스코드 사이드바에 새 글이 바로 노출되므로, 봇이 직접 첫 댓글을 달아줌.
+        # 이 레이드+난이도 조합을 구독해둔 사람이 있으면 같이 멘션함 ("기타"는 조합이 없어서 제외).
+        first_comment = "많관부! 🙌"
+        if raid != OTHER_RAID_LABEL:
+            subscriber_ids = raid_notify_manager.get_subscribers(guild.id, raid, diff)
+            if subscriber_ids:
+                mentions = " ".join(f"<@{uid}>" for uid in subscriber_ids)
+                first_comment += f"\n{mentions}"
+
+        try:
+            await thread.send(
+                first_comment,
+                allowed_mentions=discord.AllowedMentions(users=True),
+            )
+        except discord.HTTPException:
+            pass
 
         await self._final_respond(interaction, f"✅ 레이드 모집 게시물을 만들었어요: {thread.mention}")
 
