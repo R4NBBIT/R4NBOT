@@ -2028,15 +2028,19 @@ class RaidScheduleCog(commands.Cog):
         self.raids[str(message.id)] = entry
         _save_raids(self.raids)
 
-        # 아무도 멘션하지 않아도 스레드에 활동(댓글)이 하나 있으면
-        # 디스코드 사이드바에 새 글이 바로 노출되므로, 봇이 직접 첫 댓글을 달아줌.
-        # 이 레이드+난이도 조합을 구독해둔 사람이 있으면 같이 멘션함 ("기타"는 조합이 없어서 제외).
-        first_comment = "많관부! 🙌"
+        # 스레드에 멘션이 걸린 활동이 하나 있어야 디스코드 사이드바에 새 글이 바로 노출되므로,
+        # 봇이 직접 첫 댓글을 달면서 항상 작성자를 멘션함. 이 레이드+난이도 조합을 구독해둔
+        # 사람이 있으면 그 아래에 따로 한 줄 더 멘션함 ("기타"는 조합이 없어서 구독자 줄 자체가 안 붙음).
+        comment_lines = ["많관부! 🙌", f"공격대 생성자 <@{entry['creator_id']}>"]
+
         if raid != OTHER_RAID_LABEL:
             subscriber_ids = raid_notify_manager.get_subscribers(guild.id, raid, diff)
             if subscriber_ids:
+                diff_part = f" {diff}" if diff else ""
                 mentions = " ".join(f"<@{uid}>" for uid in subscriber_ids)
-                first_comment += f"\n{mentions}"
+                comment_lines.append(f"{raid}{diff_part} 구독자 {mentions}")
+
+        first_comment = "\n".join(comment_lines)
 
         try:
             await thread.send(
@@ -2650,6 +2654,15 @@ class RaidScheduleCog(commands.Cog):
         _save_raids(self.raids)
         await self._update_post_embed_by_id(raid_id)
         await self._respond(interaction, msg)
+
+        # "님"을 붙이면 뒤에 오는 이/을 조사가 대상 이름(용병 이름 포함)과 무관하게 항상 맞음.
+        target_str = member.mention if member else f"**{character}**"
+        announcement = f"<@{interaction.user.id}>님이 {target_str}님을 강제참여시켰습니다."
+        try:
+            channel = self.bot.get_channel(entry["channel_id"]) or await self.bot.fetch_channel(entry["channel_id"])
+            await channel.send(announcement, allowed_mentions=discord.AllowedMentions(users=True))
+        except Exception as e:
+            print(f"[레이드일정] 강제참여 알림 전송 실패 (raid_id={raid_id}): {e}")
 
     # ---------------- 관리자 강제변경 (특정 신청자의 캐릭터를 관리자가 대신 변경) ----------------
     async def finalize_force_rename(
