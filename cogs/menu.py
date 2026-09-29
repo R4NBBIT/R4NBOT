@@ -17,7 +17,7 @@ def is_owner(interaction: discord.Interaction) -> bool:
 # =========================
 class RerollView(discord.ui.View):
     def __init__(self, cog, author_id: int):
-        super().__init__(timeout=60)
+        super().__init__(timeout=30)
         self.cog = cog
         self.author_id = author_id
         self.reroll_count = 0
