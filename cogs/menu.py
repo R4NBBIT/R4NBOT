@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import random
+from collections import Counter
 from pathlib import Path
 
 from core.config import EGG_ID
@@ -51,7 +52,20 @@ class RerollView(discord.ui.View):
             return None
 
         current = self.history[-1]
-        history_text = ", ".join(self.history)
+
+        # 중복 메뉴는 "메뉴 x2"처럼 한 번만 적고 등장 순서(첫 등장 기준)는 유지함.
+        counts = Counter(self.history)
+        seen: set[str] = set()
+        ordered_unique = []
+        for m in self.history:
+            if m not in seen:
+                seen.add(m)
+                ordered_unique.append(m)
+        history_items = [
+            f"{m} x{counts[m]}" if counts[m] > 1 else m
+            for m in ordered_unique
+        ]
+        history_text = ", ".join(history_items)
 
         base = (
             f"🍽️ 오늘의 추천 메뉴는 **{current}**입니다, 마스터 🧐\n"
@@ -91,6 +105,10 @@ class RerollView(discord.ui.View):
                 "⛔ 명령어를 사용하신 마스터만 사용하실 수 있습니다.",
                 ephemeral=True
             )
+
+        # 이 뷰를 여기서 멈춰야, 나중에 이 뷰 혼자 60초 타임아웃이 발동해서
+        # (그 시점 기준의 더 짧은) 옛날 기록으로 메시지를 덮어쓰는 일이 없음.
+        self.stop()
 
         new_view = RerollView(self.cog, self.author_id)
         new_view.history = self.history.copy()
