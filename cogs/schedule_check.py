@@ -91,7 +91,7 @@ class ScheduleCheckCog(commands.Cog):
                 continue
             where = f"<#{entry['channel_id']}>" if entry.get("channel_id") else entry["title"]
             found.append(
-                (start_dt, f"🍻 **{_when(start_dt)} · {entry['activity']}**\n└ ✅ 참가자 · 📍 {entry['place']} · {where}")
+                (start_dt, f"🍻 **{_when(start_dt)} · {entry['title']}**\n└ ✅ 참가자 · 📍 {entry['place']} · {where}")
             )
 
         if not found:

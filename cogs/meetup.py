@@ -1,7 +1,7 @@
 """정기모임 모집 (/정모).
 
 /레이드, /종겜과 같은 포럼 모집 게시물이지만 다음이 다르다.
-- 일시(시간 포함) / 장소 / 활동(무엇을 하는지)을 입력한다.
+- 일시(시간 포함) / 장소 / 설명(무엇을 하는지, 자유롭게 여러 줄)을 입력한다.
 - 캐릭터가 없으므로 참가자는 디스코드 계정 태그만으로 표시한다.
 - 인원 제한과 대기열이 없다. (참가신청한 사람은 모두 참가자)
 
@@ -30,7 +30,7 @@ _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../E
 _DATA_DIR = os.path.join(_BASE_DIR, "data")
 MEETS_FILE = os.path.join(_DATA_DIR, "meets.json")
 
-# 사용자가 입력한 텍스트(장소/활동 등)가 들어가는 메시지에서 @everyone/@here/역할 멘션이 터지지 않게 함
+# 사용자가 입력한 텍스트(장소/설명 등)가 들어가는 메시지에서 @everyone/@here/역할 멘션이 터지지 않게 함
 _ALLOWED_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
 
 
@@ -69,6 +69,7 @@ def _save_meets(data: dict) -> None:
 # =========================
 # 순수 헬퍼 (디스코드 객체 없이 동작)
 # =========================
+ACTIVITY_MAX_LENGTH = 1000  # 임베드 필드 값 제한(1024자) 안쪽
 MAX_DAYS_AHEAD = 366  # 오타(예: 2062년) 방지용으로 1년 정도까지만 허용
 DATE_FORMAT_HINT = "예: 11/15, 11월 15일, 2026-11-15"
 
@@ -153,7 +154,6 @@ def _add_mention_fields(embed: discord.Embed, name: str, user_ids: list[int], *,
 def _build_embed(entry: dict) -> discord.Embed:
     embed = discord.Embed(
         title=_thread_title(entry),
-        description=entry.get("content") or None,
         color=discord.Color.green(),
     )
     d = date.fromisoformat(entry["date"])
@@ -163,7 +163,8 @@ def _build_embed(entry: dict) -> discord.Embed:
         inline=False,
     )
     embed.add_field(name="📍 장소", value=entry["place"], inline=False)
-    embed.add_field(name="🎯 활동", value=entry["activity"], inline=False)
+    if entry.get("activity"):
+        embed.add_field(name="📝 설명", value=entry["activity"], inline=False)
     embed.add_field(name="👑 모집자", value=f"<@{entry['creator_id']}>", inline=False)
 
     participants = entry["participants"]
@@ -178,7 +179,7 @@ def _can_manage(interaction: discord.Interaction, entry: dict) -> bool:
 
 
 # =========================
-# 모달: 날짜 / 시 / 분 / 장소 / 활동 (생성용)
+# 모달: 날짜 / 시 / 분 / 장소 / 설명 (생성용)
 # =========================
 class MeetCreateModal(discord.ui.Modal):
     def __init__(
@@ -203,10 +204,14 @@ class MeetCreateModal(discord.ui.Modal):
             placeholder="분 선택 (10분 단위)", options=_build_minute_options(d.get("minute"))
         )
         self.place_input = discord.ui.TextInput(
-            placeholder="예: 강남역 2번 출구 앞 / 디스코드 음성채널", default=d.get("place") or None, max_length=100
+            placeholder="예: 강남역 2번 출구 앞", default=d.get("place") or None, max_length=100
         )
         self.activity_input = discord.ui.TextInput(
-            placeholder="예: 저녁 먹고 보드게임", default=d.get("activity") or None, max_length=100
+            style=discord.TextStyle.paragraph,
+            placeholder="예: 저녁 먹고 보드게임",
+            default=d.get("activity") or None,
+            required=False,
+            max_length=ACTIVITY_MAX_LENGTH,
         )
 
         self.add_item(discord.ui.Label(text="날짜", component=self.date_input))
@@ -215,7 +220,7 @@ class MeetCreateModal(discord.ui.Modal):
         self.add_item(discord.ui.Label(text="장소", component=self.place_input))
         self.add_item(
             discord.ui.Label(
-                text="활동 (무엇을 하나요?)",
+                text="설명",
                 component=self.activity_input,
             )
         )
@@ -261,19 +266,12 @@ class MeetCreateModal(discord.ui.Modal):
         if not place:
             await _retry("❌ 장소를 입력해주세요.")
             return
-        if not activity:
-            await _retry("❌ 활동(무엇을 하는지)을 입력해주세요.")
-            return
 
         base = {
             "title": self.title_text, "date": date_str, "hour": hour, "minute": minute,
             "place": place, "activity": activity,
         }
-        await interaction.response.send_message(
-            f"정모 일정이 확인됐어요. ({_when_text(base)}) 설명을 추가하시겠어요? (안 넣어도 괜찮아요)",
-            view=_MeetDescriptionStepView(self.cog, base),
-            ephemeral=True,
-        )
+        await self.cog.create_meet_post(interaction, base)
 
 
 class _MeetRetryView(discord.ui.View):
@@ -291,60 +289,6 @@ class _MeetRetryView(discord.ui.View):
             self.cog, self.title_text, defaults=self.defaults, origin_message=interaction.message
         )
         await interaction.response.send_modal(modal)
-
-
-# =========================
-# 생성 2단계: 추가 설명 (선택)
-# =========================
-class _MeetDescriptionStepView(discord.ui.View):
-    def __init__(self, cog: "MeetupCog", base: dict):
-        super().__init__(timeout=300)
-        self.cog = cog
-        self.base = base
-
-    @discord.ui.button(label="설명 작성하기", style=discord.ButtonStyle.blurple)
-    async def write_description(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = MeetDescriptionModal(self.cog, self.base, origin_message=interaction.message)
-        await interaction.response.send_modal(modal)
-
-    @discord.ui.button(label="설명 없이 게시", style=discord.ButtonStyle.gray)
-    async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="게시물을 생성하고 있어요...", view=None)
-        await self.cog.create_meet_post(interaction, self.base, content="")
-
-
-class MeetDescriptionModal(discord.ui.Modal):
-    def __init__(
-        self,
-        cog: "MeetupCog",
-        base: dict,
-        *,
-        origin_message: discord.Message | None = None,
-    ):
-        super().__init__(title="정모 추가 설명 작성")
-        self.cog = cog
-        self.base = base
-        self.origin_message = origin_message
-        self.content_input = discord.ui.TextInput(
-            label="추가 설명 (선택)",
-            style=discord.TextStyle.paragraph,
-            required=False,
-            max_length=1000,
-        )
-        self.add_item(self.content_input)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        if self.origin_message is not None:
-            try:
-                await self.origin_message.edit(view=None)
-            except Exception:
-                pass
-
-        await self.cog.create_meet_post(
-            interaction,
-            self.base,
-            content=self.content_input.value.strip(),
-        )
 
 
 # =========================
@@ -425,7 +369,7 @@ class _MeetRescheduleRetryView(discord.ui.View):
 
 
 # =========================
-# 관리: 제목 / 장소 / 활동 / 추가 설명 수정
+# 관리: 제목 / 장소 / 설명 수정
 # =========================
 class MeetInfoEditModal(discord.ui.Modal):
     def __init__(self, cog: "MeetupCog", meet_id: str):
@@ -441,16 +385,13 @@ class MeetInfoEditModal(discord.ui.Modal):
             label="장소", default=entry.get("place", ""), max_length=100
         )
         self.activity_input = discord.ui.TextInput(
-            label="활동 (무엇을 하나요?)", default=entry.get("activity", ""), max_length=100
-        )
-        self.content_input = discord.ui.TextInput(
-            label="추가 설명 (선택)",
+            label="설명",
             style=discord.TextStyle.paragraph,
-            default=entry.get("content", ""),
+            default=entry.get("activity", ""),
             required=False,
-            max_length=1000,
+            max_length=ACTIVITY_MAX_LENGTH,
         )
-        for item in (self.title_input, self.place_input, self.activity_input, self.content_input):
+        for item in (self.title_input, self.place_input, self.activity_input):
             self.add_item(item)
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -462,8 +403,8 @@ class MeetInfoEditModal(discord.ui.Modal):
         title = self.title_input.value.strip()
         place = self.place_input.value.strip()
         activity = self.activity_input.value.strip()
-        if not title or not place or not activity:
-            await interaction.response.send_message("❌ 제목, 장소, 활동은 비워둘 수 없어요.", ephemeral=True)
+        if not title or not place:
+            await interaction.response.send_message("❌ 제목과 장소는 비워둘 수 없어요.", ephemeral=True)
             return
 
         # 스레드 이름 변경은 디스코드 제한(10분에 2번)에 걸리면 오래 걸릴 수 있어서 먼저 응답을 보류해둠
@@ -472,7 +413,6 @@ class MeetInfoEditModal(discord.ui.Modal):
         entry["title"] = title
         entry["place"] = place
         entry["activity"] = activity
-        entry["content"] = self.content_input.value.strip()
 
         self.cog.meets[self.meet_id] = entry
         _save_meets(self.cog.meets)
@@ -729,7 +669,7 @@ class MeetupCog(commands.Cog):
         self.meets[meet_id] = entry
         _save_meets(self.meets)
 
-        text = f"⏰ 곧 시작! 약 10분 뒤에 **{entry['place']}**에서 **{entry['activity']}** 정모가 시작돼요."
+        text = f"⏰ 곧 시작! 약 10분 뒤에 **{entry['place']}**에서 정모가 시작돼요."
         if entry["participants"]:
             text += "\n" + " ".join(f"<@{uid}>" for uid in entry["participants"])
         await self._send_to_thread(entry, text)
@@ -854,7 +794,7 @@ class MeetupCog(commands.Cog):
         return forum
 
     # ---------------- 게시물 생성 ----------------
-    async def create_meet_post(self, interaction: discord.Interaction, base: dict, *, content: str):
+    async def create_meet_post(self, interaction: discord.Interaction, base: dict):
         # 모달/버튼 응답 제한(3초) 안에 끝나지 않을 수 있어서, 아직 응답 전이라면 먼저 보류해둠
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
@@ -878,7 +818,6 @@ class MeetupCog(commands.Cog):
             "date": base["date"],
             "hour": base["hour"],
             "minute": base["minute"],
-            "content": content,
             "participants": [],
             "reminder_sent": False,
         }
