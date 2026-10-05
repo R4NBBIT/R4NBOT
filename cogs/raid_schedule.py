@@ -393,7 +393,7 @@ class RaidDescriptionModal(discord.ui.Modal):
         self.diff = diff
         self.origin_message = origin_message
         self.description_input = discord.ui.TextInput(
-            label="설명 (줄바꿈 가능)",
+            label="설명",
             style=discord.TextStyle.paragraph,
             required=False,
             max_length=1000,
@@ -526,7 +526,7 @@ class TitleEditModal(discord.ui.Modal):
             label="제목", default=entry.get("title", ""), max_length=100
         )
         self.description_input = discord.ui.TextInput(
-            label="설명 (줄바꿈 가능)", style=discord.TextStyle.paragraph, required=False, max_length=1000,
+            label="설명", style=discord.TextStyle.paragraph, required=False, max_length=1000,
             default=entry.get("description", ""),
         )
         self.add_item(self.title_input)
@@ -959,7 +959,7 @@ class TagParticipantsModal(discord.ui.Modal):
         self.cog = cog
         self.raid_id = raid_id
         self.message_input = discord.ui.TextInput(
-            label="같이 보낼 메시지 (선택, 줄바꿈 가능)",
+            label="같이 보낼 메시지 (선택)",
             style=discord.TextStyle.paragraph,
             required=False,
             max_length=500,
@@ -1322,7 +1322,7 @@ class FixedPartyDescriptionModal(discord.ui.Modal):
         self.fixed_id = fixed_id
         self.origin_message = origin_message
         self.description_input = discord.ui.TextInput(
-            label="설명 (줄바꿈 가능)", style=discord.TextStyle.paragraph, required=False, max_length=1000,
+            label="설명", style=discord.TextStyle.paragraph, required=False, max_length=1000,
         )
         self.add_item(self.description_input)
 
@@ -1447,7 +1447,7 @@ class FixedPartyTitleDescModal(discord.ui.Modal):
         entry = cog.fixed_parties.get(fixed_id) or {}
         self.title_input = discord.ui.TextInput(label="제목", default=entry.get("title", ""), max_length=100)
         self.description_input = discord.ui.TextInput(
-            label="설명 (줄바꿈 가능)", style=discord.TextStyle.paragraph, required=False, max_length=1000,
+            label="설명", style=discord.TextStyle.paragraph, required=False, max_length=1000,
             default=entry.get("description", ""),
         )
         self.add_item(self.title_input)

@@ -9,6 +9,7 @@
 """
 import json
 import os
+import re
 import tempfile
 from datetime import date, datetime, time, timedelta
 
@@ -20,7 +21,6 @@ from core.raid_channel import meet_channel_manager
 from cogs.raid_schedule import (
     KST,
     WEEKDAYS_KO,
-    _build_date_options,
     _build_hour_options,
     _build_minute_options,
 )
@@ -69,12 +69,52 @@ def _save_meets(data: dict) -> None:
 # =========================
 # 순수 헬퍼 (디스코드 객체 없이 동작)
 # =========================
+MAX_DAYS_AHEAD = 366  # 오타(예: 2062년) 방지용으로 1년 정도까지만 허용
+DATE_FORMAT_HINT = "예: 11/15, 11월 15일, 2026-11-15"
+
+
+def _parse_date_input(raw: str, today: date | None = None) -> date | None:
+    """날짜 텍스트를 해석함. 연도를 생략하면 올해로 보고, 이미 지난 날짜면 내년으로 넘김.
+
+    허용 형식: 2026-11-15 / 2026.11.15 / 2026/11/15 / 11/15 / 11-15 / 11.15 / 11월 15일
+    해석할 수 없거나 존재하지 않는 날짜면 None.
+    """
+    today = today or datetime.now(KST).date()
+    text = raw.strip().replace(" ", "")
+    m = re.fullmatch(r"(?:(\d{4})[-./년])?(\d{1,2})[-./월](\d{1,2})일?", text)
+    if not m:
+        return None
+    year_text, month, day = m.group(1), int(m.group(2)), int(m.group(3))
+    try:
+        if year_text:
+            return date(int(year_text), month, day)
+        d = date(today.year, month, day)
+        if d < today:
+            d = date(today.year + 1, month, day)
+        return d
+    except ValueError:
+        return None
+
+
+def _check_date_range(d: date, today: date | None = None) -> str | None:
+    """너무 먼 미래면 안내 문구를 돌려줌 (과거 여부는 시간까지 합쳐서 따로 검사)."""
+    today = today or datetime.now(KST).date()
+    if (d - today).days > MAX_DAYS_AHEAD:
+        return "❌ 너무 먼 날짜예요. 1년 이내의 날짜로 적어주세요."
+    return None
+
+
 def _start_dt(entry: dict) -> datetime:
     return datetime.combine(
         date.fromisoformat(entry["date"]),
         time(hour=entry["hour"], minute=entry["minute"]),
         tzinfo=KST,
     )
+
+
+def _when_text(entry: dict) -> str:
+    d = date.fromisoformat(entry["date"])
+    return f"{entry['date']}({WEEKDAYS_KO[d.weekday()]}) {entry['hour']:02d}:{entry['minute']:02d}"
 
 
 def _thread_title(entry: dict) -> str:
@@ -155,7 +195,9 @@ class MeetCreateModal(discord.ui.Modal):
         self.origin_message = origin_message
         d = defaults or {}
 
-        self.date_select = discord.ui.Select(placeholder="날짜 선택", options=_build_date_options(d.get("date")))
+        self.date_input = discord.ui.TextInput(
+            placeholder=DATE_FORMAT_HINT, default=d.get("date_text") or None, max_length=20
+        )
         self.hour_select = discord.ui.Select(placeholder="시 선택 (00-23)", options=_build_hour_options(d.get("hour")))
         self.minute_select = discord.ui.Select(
             placeholder="분 선택 (10분 단위)", options=_build_minute_options(d.get("minute"))
@@ -167,7 +209,7 @@ class MeetCreateModal(discord.ui.Modal):
             placeholder="예: 저녁 먹고 보드게임", default=d.get("activity") or None, max_length=100
         )
 
-        self.add_item(discord.ui.Label(text="날짜", component=self.date_select))
+        self.add_item(discord.ui.Label(text="날짜", component=self.date_input))
         self.add_item(discord.ui.Label(text="시", component=self.hour_select))
         self.add_item(discord.ui.Label(text="분", component=self.minute_select))
         self.add_item(discord.ui.Label(text="장소", component=self.place_input))
@@ -185,14 +227,14 @@ class MeetCreateModal(discord.ui.Modal):
             except Exception:
                 pass
 
-        date_str = self.date_select.values[0]
+        date_text = self.date_input.value
         hour = int(self.hour_select.values[0])
         minute = int(self.minute_select.values[0])
         place = self.place_input.value.strip()
         activity = self.activity_input.value.strip()
 
         defaults = {
-            "date": date_str, "hour": hour, "minute": minute,
+            "date_text": date_text, "hour": hour, "minute": minute,
             "place": self.place_input.value, "activity": self.activity_input.value,
         }
 
@@ -201,9 +243,19 @@ class MeetCreateModal(discord.ui.Modal):
                 message, view=_MeetRetryView(self.cog, self.title_text, defaults), ephemeral=True
             )
 
-        target_dt = datetime.combine(date.fromisoformat(date_str), time(hour=hour, minute=minute), tzinfo=KST)
+        parsed = _parse_date_input(date_text)
+        if parsed is None:
+            await _retry(f"❌ 날짜를 읽을 수 없어요. 이렇게 적어주세요. ({DATE_FORMAT_HINT})")
+            return
+        range_error = _check_date_range(parsed)
+        if range_error:
+            await _retry(range_error)
+            return
+        date_str = parsed.isoformat()
+
+        target_dt = datetime.combine(parsed, time(hour=hour, minute=minute), tzinfo=KST)
         if target_dt <= datetime.now(KST):
-            await _retry("❌ 이미 지난 시간으로는 정모 일정을 등록할 수 없어요. 다른 날짜/시간을 선택해주세요.")
+            await _retry("❌ 이미 지난 시간으로는 정모 일정을 등록할 수 없어요. 다른 날짜/시간으로 적어주세요.")
             return
 
         if not place:
@@ -218,7 +270,7 @@ class MeetCreateModal(discord.ui.Modal):
             "place": place, "activity": activity,
         }
         await interaction.response.send_message(
-            "정모 일정이 확인됐어요. 설명을 추가하시겠어요? (안 넣어도 괜찮아요)",
+            f"정모 일정이 확인됐어요. ({_when_text(base)}) 설명을 추가하시겠어요? (안 넣어도 괜찮아요)",
             view=_MeetDescriptionStepView(self.cog, base),
             ephemeral=True,
         )
@@ -274,7 +326,7 @@ class MeetDescriptionModal(discord.ui.Modal):
         self.base = base
         self.origin_message = origin_message
         self.content_input = discord.ui.TextInput(
-            label="추가 설명 (선택, 줄바꿈 가능)",
+            label="추가 설명 (선택)",
             style=discord.TextStyle.paragraph,
             required=False,
             max_length=1000,
@@ -311,8 +363,8 @@ class MeetRescheduleModal(discord.ui.Modal):
         self.meet_id = meet_id
         self.origin_message = origin_message
 
-        self.date_select = discord.ui.Select(
-            placeholder="날짜 선택", options=_build_date_options(defaults.get("date"))
+        self.date_input = discord.ui.TextInput(
+            placeholder=DATE_FORMAT_HINT, default=defaults.get("date_text") or defaults.get("date") or None, max_length=20
         )
         self.hour_select = discord.ui.Select(
             placeholder="시 선택 (00-23)", options=_build_hour_options(defaults.get("hour"))
@@ -320,7 +372,7 @@ class MeetRescheduleModal(discord.ui.Modal):
         self.minute_select = discord.ui.Select(
             placeholder="분 선택 (10분 단위)", options=_build_minute_options(defaults.get("minute"))
         )
-        self.add_item(discord.ui.Label(text="날짜", component=self.date_select))
+        self.add_item(discord.ui.Label(text="날짜", component=self.date_input))
         self.add_item(discord.ui.Label(text="시", component=self.hour_select))
         self.add_item(discord.ui.Label(text="분", component=self.minute_select))
 
@@ -331,18 +383,29 @@ class MeetRescheduleModal(discord.ui.Modal):
             except Exception:
                 pass
 
-        date_str = self.date_select.values[0]
+        date_text = self.date_input.value
         hour = int(self.hour_select.values[0])
         minute = int(self.minute_select.values[0])
+        defaults = {"date_text": date_text, "hour": hour, "minute": minute}
 
-        target_dt = datetime.combine(date.fromisoformat(date_str), time(hour=hour, minute=minute), tzinfo=KST)
-        if target_dt <= datetime.now(KST):
-            defaults = {"date": date_str, "hour": hour, "minute": minute}
+        async def _retry(message: str) -> None:
             await interaction.response.send_message(
-                "❌ 이미 지난 시간으로는 일정을 수정할 수 없어요. 다른 날짜/시간을 선택해주세요.",
-                view=_MeetRescheduleRetryView(self.cog, self.meet_id, defaults),
-                ephemeral=True,
+                message, view=_MeetRescheduleRetryView(self.cog, self.meet_id, defaults), ephemeral=True
             )
+
+        parsed = _parse_date_input(date_text)
+        if parsed is None:
+            await _retry(f"❌ 날짜를 읽을 수 없어요. 이렇게 적어주세요. ({DATE_FORMAT_HINT})")
+            return
+        range_error = _check_date_range(parsed)
+        if range_error:
+            await _retry(range_error)
+            return
+        date_str = parsed.isoformat()
+
+        target_dt = datetime.combine(parsed, time(hour=hour, minute=minute), tzinfo=KST)
+        if target_dt <= datetime.now(KST):
+            await _retry("❌ 이미 지난 시간으로는 일정을 수정할 수 없어요. 다른 날짜/시간으로 적어주세요.")
             return
 
         await self.cog.update_meet_schedule(interaction, self.meet_id, date_str, hour, minute)
@@ -381,7 +444,7 @@ class MeetInfoEditModal(discord.ui.Modal):
             label="활동 (무엇을 하나요?)", default=entry.get("activity", ""), max_length=100
         )
         self.content_input = discord.ui.TextInput(
-            label="추가 설명 (선택, 줄바꿈 가능)",
+            label="추가 설명 (선택)",
             style=discord.TextStyle.paragraph,
             default=entry.get("content", ""),
             required=False,
@@ -427,7 +490,7 @@ class MeetTagModal(discord.ui.Modal):
         self.cog = cog
         self.meet_id = meet_id
         self.message_input = discord.ui.TextInput(
-            label="같이 보낼 메시지 (선택, 줄바꿈 가능)",
+            label="같이 보낼 메시지 (선택)",
             style=discord.TextStyle.paragraph,
             required=False,
             max_length=500,

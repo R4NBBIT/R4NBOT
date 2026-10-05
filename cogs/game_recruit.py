@@ -2,7 +2,7 @@
 
 /레이드와 비슷한 모집 게시물이지만 다음이 다르다.
 - 레이드/난이도 대신 게임 제목을 직접 입력한다.
-- 인원수 제한(1 이상의 자연수, 또는 제한없음)을 정한다.
+- 인원수 제한(숫자, 또는 제한없음)을 정한다.
 - 캐릭터가 없으므로 참가자는 디스코드 계정 태그만으로 표시한다.
 - 모집 설명을 쓸 때 "게임 구매 링크"와 "모집 내용"을 따로 입력받는다.
 
@@ -230,7 +230,7 @@ class GameCreateModal(discord.ui.Modal):
         self.add_item(
             discord.ui.Label(
                 text="인원수 제한",
-                description="1 이상의 자연수, 제한이 없으면 제한없음",
+                description="숫자로 적어주세요. 제한이 없으면 그대로 두면 돼요",
                 component=self.capacity_input,
             )
         )
@@ -269,7 +269,7 @@ class GameCreateModal(discord.ui.Modal):
 
         ok, capacity = _parse_capacity(capacity_raw)
         if not ok:
-            await _retry("❌ 인원수는 1 이상의 자연수 또는 '제한없음'만 입력할 수 있어요.")
+            await _retry("❌ 인원수는 숫자(1 이상)나 '제한없음'으로 적어주세요.")
             return
 
         base = {
@@ -339,7 +339,7 @@ class GameDescriptionModal(discord.ui.Modal):
             placeholder="예: https://store.steampowered.com/...",
         )
         self.content_input = discord.ui.TextInput(
-            label="모집 내용 (선택, 줄바꿈 가능)",
+            label="모집 내용 (선택)",
             style=discord.TextStyle.paragraph,
             required=False,
             max_length=1000,
@@ -445,7 +445,7 @@ class GameInfoEditModal(discord.ui.Modal):
             label="게임 제목", default=entry.get("game", ""), max_length=100
         )
         self.capacity_input = discord.ui.TextInput(
-            label="인원수 제한 (1 이상의 자연수 / 제한없음)",
+            label="인원수 제한 (숫자 / 제한없음)",
             default=_capacity_text(entry.get("capacity")),
             required=False,
             max_length=CAPACITY_INPUT_MAX_LENGTH,
@@ -454,7 +454,7 @@ class GameInfoEditModal(discord.ui.Modal):
             label="게임 구매 링크 (선택)", default=entry.get("link", ""), required=False, max_length=500
         )
         self.content_input = discord.ui.TextInput(
-            label="모집 내용 (선택, 줄바꿈 가능)",
+            label="모집 내용 (선택)",
             style=discord.TextStyle.paragraph,
             default=entry.get("content", ""),
             required=False,
@@ -478,7 +478,7 @@ class GameInfoEditModal(discord.ui.Modal):
         ok, capacity = _parse_capacity(self.capacity_input.value)
         if not ok:
             await interaction.response.send_message(
-                "❌ 인원수는 1 이상의 자연수 또는 '제한없음'만 입력할 수 있어요.", ephemeral=True
+                "❌ 인원수는 숫자(1 이상)나 '제한없음'으로 적어주세요.", ephemeral=True
             )
             return
         if capacity is not None and capacity < len(entry["participants"]):
@@ -515,7 +515,7 @@ class GameTagModal(discord.ui.Modal):
         self.cog = cog
         self.game_id = game_id
         self.message_input = discord.ui.TextInput(
-            label="같이 보낼 메시지 (선택, 줄바꿈 가능)",
+            label="같이 보낼 메시지 (선택)",
             style=discord.TextStyle.paragraph,
             required=False,
             max_length=500,
