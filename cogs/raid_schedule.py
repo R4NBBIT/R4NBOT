@@ -1767,69 +1767,6 @@ class RaidScheduleCog(commands.Cog):
             return
         await interaction.response.send_message(f"현재 레이드 채널: {channel.mention}", ephemeral=True)
 
-    @app_commands.command(name="레이드일정", description="특정 사용자가 참가 신청(또는 대기열)한 레이드 일정을 한 번에 확인합니다.")
-    @app_commands.describe(사용자="확인할 사용자 (생략하면 본인)")
-    async def raid_schedule_of(self, interaction: discord.Interaction, 사용자: discord.Member | None = None):
-        if interaction.guild is None:
-            await interaction.response.send_message("이 명령어는 서버에서만 사용할 수 있어요.", ephemeral=True)
-            return
-
-        target = 사용자 or interaction.user
-
-        found: list[tuple[datetime, dict, dict]] = []
-        for entry in self.raids.values():
-            if entry.get("guild_id") != interaction.guild.id:
-                continue
-            app = _find_application(entry, target.id)
-            if app is None:
-                continue
-            try:
-                start_dt = datetime.combine(
-                    date.fromisoformat(entry["date"]),
-                    time(hour=entry["hour"], minute=entry["minute"]),
-                    tzinfo=KST,
-                )
-            except Exception:
-                continue
-            found.append((start_dt, entry, app))
-
-        if not found:
-            await interaction.response.send_message(
-                f"**{target.display_name}**님이 참가 신청한 레이드 일정이 없어요.",
-                ephemeral=True,
-            )
-            return
-
-        found.sort(key=lambda x: x[0])
-
-        lines = []
-        for start_dt, entry, app in found:
-            diff_part = f" ({entry['diff']})" if entry.get("diff") else ""
-            when = f"{entry['date']}({WEEKDAYS_KO[start_dt.weekday()]}) {entry['hour']:02d}:{entry['minute']:02d}"
-
-            if app["where"] == "participant":
-                status = f"✅ 참가자 ({ROLE_LABEL.get(app['role'], app['role'])})"
-            else:
-                same_role_queue = [
-                    p for p in entry.get("queue", []) if p.get("role") == app["role"]
-                ]
-                position = next(
-                    (i + 1 for i, p in enumerate(same_role_queue) if p.get("user_id") == target.id),
-                    None,
-                )
-                pos_text = f" {position}번째" if position else ""
-                status = f"⏳ 대기열{pos_text} ({ROLE_LABEL.get(app['role'], app['role'])})"
-
-            channel_mention = f"<#{entry['channel_id']}>" if entry.get("channel_id") else entry["title"]
-            lines.append(f"**{when} · {entry['raid']}{diff_part}**\n└ {status} · {channel_mention}")
-
-        embed = discord.Embed(
-            title=f"📅 {target.display_name}님의 레이드 일정",
-            description="\n\n".join(lines),
-            color=discord.Color.teal(),
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
     # ---------------- 레이드 생성 ----------------
     @app_commands.command(name="레이드", description="레이드 모집 일정을 등록합니다.")
     @app_commands.describe(제목="모집 게시물 제목")
@@ -2031,7 +1968,7 @@ class RaidScheduleCog(commands.Cog):
         # 스레드에 멘션이 걸린 활동이 하나 있어야 디스코드 사이드바에 새 글이 바로 노출되므로,
         # 봇이 직접 첫 댓글을 달면서 항상 작성자를 멘션함. 이 레이드+난이도 조합을 구독해둔
         # 사람이 있으면 그 아래에 따로 한 줄 더 멘션함 ("기타"는 조합이 없어서 구독자 줄 자체가 안 붙음).
-        comment_lines = ["많관부! 🙌", f"공격대 생성자 <@{entry['creator_id']}>"]
+        comment_lines = [f"공격대 생성자 <@{entry['creator_id']}>"]
 
         if raid != OTHER_RAID_LABEL:
             subscriber_ids = raid_notify_manager.get_subscribers(guild.id, raid, diff)

@@ -11,10 +11,14 @@ from typing import Dict, Optional
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../EGG-BOT
 _DATA_DIR = os.path.join(_BASE_DIR, "data")
 DATA_FILE = os.path.join(_DATA_DIR, "raid_channel.json")
+GAME_DATA_FILE = os.path.join(_DATA_DIR, "game_channel.json")
+MEET_DATA_FILE = os.path.join(_DATA_DIR, "meet_channel.json")
 
 
 class RaidChannelManager:
-    def __init__(self):
+    def __init__(self, data_file: str = DATA_FILE, label: str = "레이드채널"):
+        self.data_file = data_file
+        self.label = label
         self.raid_channels: Dict[int, int] = {}  # {guild_id: channel_id}
         os.makedirs(_DATA_DIR, exist_ok=True)
         self._load()
@@ -23,15 +27,15 @@ class RaidChannelManager:
     # 파일 로드 / 저장
     # =========================
     def _load(self):
-        if not os.path.exists(DATA_FILE):
+        if not os.path.exists(self.data_file):
             return
         try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
+            with open(self.data_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 self.raid_channels = {int(k): int(v) for k, v in data.items()}
-            print(f"[레이드채널] 로드 완료: {len(self.raid_channels)}개 서버 (경로: {DATA_FILE})")
+            print(f"[{self.label}] 로드 완료: {len(self.raid_channels)}개 서버 (경로: {self.data_file})")
         except Exception as e:
-            print(f"[레이드채널] 로드 실패: {e}")
+            print(f"[{self.label}] 로드 실패: {e}")
 
     def _save(self):
         os.makedirs(_DATA_DIR, exist_ok=True)
@@ -39,9 +43,9 @@ class RaidChannelManager:
         try:
             with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
                 json.dump(self.raid_channels, f, indent=2)
-            os.replace(tmp_path, DATA_FILE)
+            os.replace(tmp_path, self.data_file)
         except Exception as e:
-            print(f"[레이드채널] 저장 실패: {e}")
+            print(f"[{self.label}] 저장 실패: {e}")
             try:
                 os.remove(tmp_path)
             except Exception:
@@ -64,3 +68,7 @@ class RaidChannelManager:
 
 # 전역 인스턴스
 raid_channel_manager = RaidChannelManager()
+# /종겜채널용 (레이드 채널과 별개로 저장, 같은 채널을 지정해도 됨)
+game_channel_manager = RaidChannelManager(GAME_DATA_FILE, "종겜채널")
+# /정모채널용
+meet_channel_manager = RaidChannelManager(MEET_DATA_FILE, "정모채널")
