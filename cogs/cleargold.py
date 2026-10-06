@@ -97,7 +97,7 @@ class ClearGoldCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ---------------- 추가 (계란 전용) ----------------
-    @app_commands.command(name="클골추가", description="레이드 클리어 골드 추가 (계란 전용)")
+    @app_commands.command(name="레이드추가", description="레이드 클리어 골드 추가 (계란 전용)")
     @app_commands.check(is_owner)
     @app_commands.autocomplete(레이드=raid_autocomplete, 난이도=diff_autocomplete)
     @app_commands.describe(
@@ -135,7 +135,7 @@ class ClearGoldCog(commands.Cog):
         if key in self.raid_data:
             return await interaction.response.send_message(
                 f"⚠️ 이미 등록된 조합이에요: **{레이드} - {난이도}**\n"
-                f"내용을 바꾸시려면 `/클골수정`을 사용해주세요.",
+                f"내용을 바꾸시려면 `/레이드수정`을 사용해주세요.",
                 ephemeral=True
             )
 
@@ -162,7 +162,7 @@ class ClearGoldCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ---------------- 삭제 (계란 전용) ----------------
-    @app_commands.command(name="클골삭제", description="레이드 클리어 골드 삭제 (계란 전용)")
+    @app_commands.command(name="레이드삭제", description="레이드 클리어 골드 삭제 (계란 전용)")
     @app_commands.check(is_owner)
     @app_commands.autocomplete(레이드=raid_autocomplete, 난이도=diff_autocomplete)
     async def remove_raid_gold(self, interaction: discord.Interaction, 레이드: str, 난이도: str):
@@ -184,7 +184,7 @@ class ClearGoldCog(commands.Cog):
         )
 
     # ---------------- 수정 (계란 전용) ----------------
-    @app_commands.command(name="클골수정", description="레이드 클리어 골드 수정 (계란 전용, 적은 항목만 바뀌어요)")
+    @app_commands.command(name="레이드수정", description="레이드 클리어 골드 수정 (계란 전용, 적은 항목만 바뀌어요)")
     @app_commands.check(is_owner)
     @app_commands.autocomplete(레이드=raid_autocomplete, 난이도=diff_autocomplete)
     @app_commands.describe(
@@ -216,7 +216,7 @@ class ClearGoldCog(commands.Cog):
         if key not in self.raid_data:
             return await interaction.response.send_message(
                 f"❌ 존재하지 않는 조합이에요: **{key[0]} - {key[1]}**\n"
-                f"새로 등록하시려면 `/클골추가`를 사용해주세요.",
+                f"새로 등록하시려면 `/레이드추가`를 사용해주세요.",
                 ephemeral=True
             )
 

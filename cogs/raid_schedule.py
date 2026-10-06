@@ -311,7 +311,7 @@ class RaidCreateModal(discord.ui.Modal):
                     self.cog, self.title_text, defaults,
                     description_text=self.description_text, edit_raid_id=self.edit_raid_id,
                 )
-                # 수정사항 1: "/클골추가로 먼저 등록하거나" 문구 제거
+                # 수정사항 1: "/레이드추가로 먼저 등록하거나" 문구 제거
                 await interaction.response.send_message(
                     f"❌ **{raid} - {diff or '(난이도 미선택)'}**: 존재하지 않는 조합입니다.\n"
                     f"아래 버튼으로 다른 조합을 다시 선택해주세요.",
