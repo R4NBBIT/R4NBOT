@@ -20,6 +20,7 @@ from core.raid_data import (
     DEFAULT_SUPPORT_SLOTS,
     get_schedulable_raid_data,
     get_party_slots,
+    check_schedule_date,
 )
 from core.raid_channel import raid_channel_manager
 from core.raid_notify import raid_notify_manager
@@ -319,6 +320,20 @@ class RaidCreateModal(discord.ui.Modal):
                 )
                 return
 
+            # 이벤트 레이드처럼 기간이 있는 레이드는 일정 날짜가 시작일~종료일 안이어야 함
+            period_error = check_schedule_date(key, date.fromisoformat(date_str))
+            if period_error:
+                retry_view = _RetryView(
+                    self.cog, self.title_text, defaults,
+                    description_text=self.description_text, edit_raid_id=self.edit_raid_id,
+                )
+                await interaction.response.send_message(
+                    f"{period_error}\n다른 날짜나 레이드를 다시 선택해주세요.",
+                    view=retry_view,
+                    ephemeral=True,
+                )
+                return
+
         if self.edit_raid_id:
             await self.cog.update_raid_post(interaction, self.edit_raid_id, date_str, hour, minute, raid, diff)
         else:
@@ -496,6 +511,21 @@ class RaidRescheduleModal(discord.ui.Modal):
                 ephemeral=True,
             )
             return
+
+        # 이벤트 레이드처럼 기간이 있는 레이드는 새 날짜도 시작일~종료일 안이어야 함
+        raid_entry = self.cog.raids.get(self.raid_id)
+        if raid_entry and raid_entry.get("raid") != OTHER_RAID_LABEL:
+            period_error = check_schedule_date(
+                (raid_entry["raid"], raid_entry.get("diff", "")), date.fromisoformat(date_str)
+            )
+            if period_error:
+                retry_view = _RescheduleRetryView(
+                    self.cog, self.raid_id, {"date": date_str, "hour": hour, "minute": minute}
+                )
+                await interaction.response.send_message(
+                    f"{period_error}\n다른 날짜를 선택해주세요.", view=retry_view, ephemeral=True
+                )
+                return
 
         await self.cog.update_raid_schedule_only(interaction, self.raid_id, date_str, hour, minute)
 
@@ -1115,6 +1145,13 @@ def _build_weekday_options(default_value: int | None = None) -> list[discord.Sel
         discord.SelectOption(label=f"매주 {WEEKDAYS_KO[i]}요일", value=str(i), default=(default_value == i))
         for i in range(7)
     ]
+
+
+def _fixed_period_error(fentry: dict, raid_date: str) -> str | None:
+    """고정공격대의 레이드가 모집 가능 기간(시작일~종료일) 밖의 날짜면 안내 문구를 돌려줌."""
+    if fentry["raid"] == OTHER_RAID_LABEL:
+        return None
+    return check_schedule_date((fentry["raid"], fentry.get("diff", "")), date.fromisoformat(raid_date))
 
 
 def _next_weekday_date(weekday: int, from_date: date | None = None) -> date:
@@ -2154,6 +2191,13 @@ class RaidScheduleCog(commands.Cog):
             await interaction.response.edit_message(content="고정공격대 정보를 찾을 수 없어요.", view=None)
             return
 
+        period_error = _fixed_period_error(fentry, nearest_date)
+        if period_error:
+            await interaction.response.edit_message(
+                content=f"{period_error}\n이번 회차는 게시하지 않았어요. (고정공격대는 그대로 등록돼 있어요)", view=None
+            )
+            return
+
         posted = await self._post_fixed_party_instance(fixed_id, fentry, nearest_date)
         if posted is None:
             await interaction.response.edit_message(
@@ -2279,6 +2323,10 @@ class RaidScheduleCog(commands.Cog):
         forum = guild.get_channel(channel_id) if channel_id else None
         if not isinstance(forum, discord.ForumChannel):
             print(f"[고정공격대] 레이드 채널이 없어 건너뜀 (guild_id={guild.id})")
+            return None
+
+        if _fixed_period_error(fentry, raid_date):
+            print(f"[고정공격대] 모집 가능 기간 밖이라 이번 게시는 건너뜀 (fixed_id={fixed_id}, 날짜={raid_date})")
             return None
 
         entry = {

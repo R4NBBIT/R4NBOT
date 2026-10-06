@@ -15,12 +15,17 @@ cogs/raid_schedule.py(레이드 모집 일정)의 난이도 선택지에서는 �
 """
 import json
 import os
+import re
 import tempfile
+from datetime import date, datetime, timedelta, timezone
 
 # 봇 소스 위치(EGG-BOT/) 기준 절대경로로 고정
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../EGG-BOT
 _DATA_DIR = os.path.join(_BASE_DIR, "data")
 DATA_FILE = os.path.join(_DATA_DIR, "raid_gold.json")
+PERIODS_FILE = os.path.join(_DATA_DIR, "raid_periods.json")
+
+KST = timezone(timedelta(hours=9))
 
 # 값 튜플에서 빠진 뒷부분을 채울 때 쓰는 기본값 (순서: 입장레벨, 딜러정원, 서포터정원)
 _TAIL_DEFAULTS = [0, 3, 1]
@@ -186,6 +191,138 @@ def get_party_slots(data: dict[tuple[str, str], tuple], key: tuple[str, str]) ->
 def get_schedulable_raid_data(data: dict[tuple[str, str], tuple]) -> dict[tuple[str, str], tuple]:
     """레이드 모집(raid_schedule.py)에서 선택 가능한 조합만 남긴 딕셔너리.
 
-    "싱글"처럼 혼자 도는 난이도는 파티 모집 대상이 아니라서 제외함.
+    - "싱글"처럼 혼자 도는 난이도는 파티 모집 대상이 아니라서 제외함.
+    - 종료일이 지난 이벤트 레이드는 목록에서 빠짐. (시작일 전인 레이드는 미리 만들 수 있게 목록에 남김)
     """
-    return {k: v for k, v in data.items() if k[1] not in NON_SCHEDULABLE_DIFFS}
+    return {
+        k: v for k, v in data.items()
+        if k[1] not in NON_SCHEDULABLE_DIFFS and not is_expired(k)
+    }
+
+
+# =========================
+# 모집 가능 기간 (시작일 / 종료일) - 이벤트 레이드처럼 기간이 있는 레이드에만 설정함
+#
+# 레이드 데이터(raid_gold.json)와 별도 파일(raid_periods.json)에 {"레이드|난이도": [시작일, 종료일]} 형태로 저장.
+# 시작일/종료일은 각각 비워둘 수 있고(제한 없음), 날짜는 모두 포함(그날 포함)으로 취급함.
+# - 종료일이 지나면 (오늘 > 종료일) 모집/알림 목록에서 자동으로 사라짐
+# - 레이드 "일정 날짜"가 시작일 이전이거나 종료일 이후면 만들 수 없음
+# =========================
+# 최초 실행 시 파일이 없으면 이 값으로 data/raid_periods.json을 만듦 (그 뒤로는 /클골기간으로 관리)
+DEFAULT_PERIODS = {
+    ("3막", "익스트림 노말"): ("2026-09-23", "2026-10-20"),
+    ("3막", "익스트림 하드"): ("2026-09-23", "2026-10-20"),
+    ("3막", "익스트림 나이트메어"): ("2026-09-23", "2026-10-20"),
+    ("종막", "익스트림 노말"): ("2026-10-21", "2026-11-17"),
+    ("종막", "익스트림 하드"): ("2026-10-21", "2026-11-17"),
+    ("종막", "익스트림 나이트메어"): ("2026-10-21", "2026-11-17"),
+}
+
+
+def save_periods(periods: dict) -> None:
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=_DATA_DIR)
+    try:
+        serializable = {key_to_str(k): list(v) for k, v in periods.items()}
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, PERIODS_FILE)
+    except Exception as e:
+        print(f"[레이드기간] 저장 실패: {e}")
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+
+def load_periods() -> dict[tuple[str, str], tuple[str, str]]:
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    if not os.path.exists(PERIODS_FILE):
+        periods = dict(DEFAULT_PERIODS)
+        save_periods(periods)
+        print(f"[레이드기간] 파일이 없어 기본값으로 생성했습니다: {PERIODS_FILE}")
+        return periods
+    try:
+        with open(PERIODS_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        periods = {}
+        for k, v in raw.items():
+            start, end = (list(v) + ["", ""])[:2]
+            periods[str_to_key(k)] = (start or "", end or "")
+        print(f"[레이드기간] 로드 완료: {len(periods)}개 (경로: {PERIODS_FILE})")
+        return periods
+    except Exception as e:
+        print(f"[레이드기간] 로드 실패, 기본값 사용: {e}")
+        return dict(DEFAULT_PERIODS)
+
+
+# 모든 cog가 같은 객체를 보도록 모듈 단위로 하나만 들고 있음 (/클골기간으로 바꾸면 바로 전체에 반영)
+PERIODS: dict[tuple[str, str], tuple[str, str]] = load_periods()
+
+
+def _today() -> date:
+    return datetime.now(KST).date()
+
+
+def get_period(key: tuple[str, str]) -> tuple[date | None, date | None]:
+    """(시작일, 종료일) 반환. 설정 안 된 쪽은 None."""
+    start_s, end_s = PERIODS.get(key, ("", ""))
+    start = date.fromisoformat(start_s) if start_s else None
+    end = date.fromisoformat(end_s) if end_s else None
+    return start, end
+
+
+def set_period(key: tuple[str, str], start: date | None, end: date | None) -> None:
+    """기간을 저장함. 둘 다 None이면 기간 설정을 지움."""
+    if start is None and end is None:
+        PERIODS.pop(key, None)
+    else:
+        PERIODS[key] = (start.isoformat() if start else "", end.isoformat() if end else "")
+    save_periods(PERIODS)
+
+
+def remove_period(key: tuple[str, str]) -> None:
+    if key in PERIODS:
+        PERIODS.pop(key)
+        save_periods(PERIODS)
+
+
+def is_expired(key: tuple[str, str], today: date | None = None) -> bool:
+    """종료일이 지났으면(오늘 > 종료일) True. 종료일이 없으면 항상 False."""
+    _, end = get_period(key)
+    return end is not None and (today or _today()) > end
+
+
+def format_period(key: tuple[str, str]) -> str:
+    """'2026-09-23 ~ 2026-10-20' 형태 (한쪽만 있으면 '2026-09-23 ~', '~ 2026-10-20'). 없으면 빈 문자열."""
+    start, end = get_period(key)
+    if start is None and end is None:
+        return ""
+    return f"{start.isoformat() if start else ''} ~ {end.isoformat() if end else ''}".strip()
+
+
+def check_schedule_date(key: tuple[str, str], schedule_date: date) -> str | None:
+    """레이드 일정 날짜가 모집 가능 기간 안인지 확인. 문제가 있으면 사용자에게 보여줄 문구, 괜찮으면 None."""
+    start, end = get_period(key)
+    name = f"{key[0]} {key[1]}"
+    if start is not None and schedule_date < start:
+        return f"❌ {name}: {start.isoformat()}부터 진행되는 레이드라서, 그 전 날짜로는 일정을 만들 수 없어요."
+    if end is not None and schedule_date > end:
+        return f"❌ {name}: {end.isoformat()}까지만 진행되는 레이드라서, 그 이후 날짜로는 일정을 만들 수 없어요."
+    return None
+
+
+_DATE_RE = re.compile(r"(?:(\d{4})[-./년])?(\d{1,2})[-./월](\d{1,2})일?")
+
+
+def parse_date_text(raw: str, today: date | None = None) -> date | None:
+    """날짜 텍스트를 해석함. 연도를 생략하면 올해로 봄. (예: 2026-10-20 / 10/20 / 10월 20일)"""
+    today = today or _today()
+    m = _DATE_RE.fullmatch((raw or "").strip().replace(" ", ""))
+    if not m:
+        return None
+    year_text, month, day = m.group(1), int(m.group(2)), int(m.group(3))
+    try:
+        return date(int(year_text) if year_text else today.year, month, day)
+    except ValueError:
+        return None
