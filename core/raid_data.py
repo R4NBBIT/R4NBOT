@@ -24,6 +24,7 @@ _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../E
 _DATA_DIR = os.path.join(_BASE_DIR, "data")
 DATA_FILE = os.path.join(_DATA_DIR, "raid_gold.json")
 PERIODS_FILE = os.path.join(_DATA_DIR, "raid_periods.json")
+VERSION_FILE = os.path.join(_DATA_DIR, "raid_data_version.json")
 
 KST = timezone(timedelta(hours=9))
 
@@ -52,11 +53,11 @@ DEFAULT_RAID_DATA = {
     ("3막", "익스트림 하드"): (50000, 0, 50000, 1770, 6, 2),
     ("3막", "익스트림 나이트메어"): (50000, 0, 50000, 1780, 6, 2),
 
-    ("4막", "싱글"): (16500, 16500, 33000, 1700, 6, 2),
+    ("4막", "싱글"): (13500, 13500, 27000, 1700, 6, 2),
     ("4막", "노말"): (13500, 13500, 27000, 1700, 6, 2),
     ("4막", "하드"): (38000, 0, 38000, 1720, 6, 2),
 
-    ("종막", "싱글"): (20000, 20000, 40000, 1710, 6, 2),
+    ("종막", "싱글"): (16000, 16000, 32000, 1710, 6, 2),
     ("종막", "노말"): (16000, 16000, 32000, 1710, 6, 2),
     ("종막", "하드"): (48000, 0, 48000, 1730, 6, 2),
     ("종막", "익스트림 노말"): (20000, 0, 20000, 1730, 6, 2),
@@ -76,6 +77,60 @@ DEFAULT_RAID_DATA = {
     ("벨가르딘", "하드"): (62000, 0, 62000, 1770, 6, 2),
     ("벨가르딘", "나이트메어"): (75000, 0, 75000, 1780, 6, 2)
 }
+
+# =========================
+# 데이터 갱신(마이그레이션)
+#
+# 이미 서버에 data/raid_gold.json이 만들어져 있으면 위 DEFAULT_RAID_DATA를 고쳐도 반영되지 않기 때문에,
+# 값을 바꾸거나 새 레이드를 추가할 때는 DEFAULT_RAID_DATA를 고치는 것과 함께 아래 MIGRATIONS 맨 끝에
+# "{(레이드, 난이도): (골드, 귀속골드, 총합, 입장레벨, 딜러정원, 서포터정원)}" 형태로 한 줄 추가하면 됩니다.
+# 봇이 시작할 때 아직 적용 안 된 항목만 순서대로 한 번씩 적용되고(data/raid_data_version.json에 기록),
+# 이미 있는 조합은 값이 교체되고 없는 조합은 새로 추가됩니다. 한 번 적용된 뒤에 /레이드수정으로 바꾼 값은
+# 다시 덮어쓰지 않습니다.
+# =========================
+MIGRATIONS: list[dict[tuple[str, str], tuple]] = [
+    # 1: 4막/종막 노말·하드·싱글, 세르카 노말 골드 및 세르카 나이트메어 입장레벨 정정
+    {
+        ("4막", "싱글"): (13500, 13500, 27000, 1700, 6, 2),
+        ("4막", "노말"): (13500, 13500, 27000, 1700, 6, 2),
+        ("4막", "하드"): (38000, 0, 38000, 1720, 6, 2),
+        ("종막", "싱글"): (16000, 16000, 32000, 1710, 6, 2),
+        ("종막", "노말"): (16000, 16000, 32000, 1710, 6, 2),
+        ("종막", "하드"): (48000, 0, 48000, 1730, 6, 2),
+        ("세르카", "노말"): (16000, 16000, 32000, 1710, 3, 1),
+        ("세르카", "나이트메어"): (54000, 0, 54000, 1740, 3, 1),
+    },
+]
+
+
+def _read_version() -> int:
+    try:
+        with open(VERSION_FILE, "r", encoding="utf-8") as f:
+            return int(json.load(f).get("version", 0))
+    except Exception:
+        return 0
+
+
+def _write_version(version: int) -> None:
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    try:
+        with open(VERSION_FILE, "w", encoding="utf-8") as f:
+            json.dump({"version": version}, f)
+    except Exception as e:
+        print(f"[레이드데이터] 버전 기록 실패: {e}")
+
+
+def _apply_migrations(data: dict) -> bool:
+    """아직 적용 안 된 MIGRATIONS를 data에 적용함. 바뀐 게 있으면 True."""
+    current = _read_version()
+    if current >= len(MIGRATIONS):
+        return False
+    for number, patch in enumerate(MIGRATIONS[current:], start=current + 1):
+        data.update(patch)
+        print(f"[레이드데이터] 데이터 갱신 #{number} 적용: {len(patch)}개 조합")
+    _write_version(len(MIGRATIONS))
+    return True
+
 
 DIFF_ORDER = {
     "노말": 1,
@@ -132,6 +187,7 @@ def load_raid_data() -> dict[tuple[str, str], tuple[int, int, int, int, int, int
     if not os.path.exists(DATA_FILE):
         data = dict(DEFAULT_RAID_DATA)
         save_raid_data(data)
+        _write_version(len(MIGRATIONS))  # 기본값에 이미 최신 값이 들어 있으므로 갱신 내역은 모두 적용된 것으로 기록
         print(f"[레이드데이터] 파일이 없어 기본값으로 생성했습니다: {DATA_FILE}")
         return data
     try:
@@ -140,6 +196,8 @@ def load_raid_data() -> dict[tuple[str, str], tuple[int, int, int, int, int, int
         data = {}
         for k, v in raw.items():
             data[str_to_key(k)] = tuple(_pad_value(list(v)))
+        if _apply_migrations(data):
+            save_raid_data(data)
         print(f"[레이드데이터] 로드 완료: {len(data)}개 조합 (경로: {DATA_FILE})")
         return data
     except Exception as e:
