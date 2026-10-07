@@ -63,6 +63,10 @@ def _save_raids(data: dict) -> None:
 def _split_raid_diff(raiddiff: str, known_raid_names: list[str]):
     if raiddiff == OTHER_RAID_LABEL:
         return OTHER_RAID_LABEL, ""
+    if raiddiff.startswith(OTHER_RAID_LABEL + " "):
+        # "기타"는 raid_data에 등록된 조합이 아니라서, 난이도가 붙어있어도
+        # (예: "기타 익스트림 나이트메어") 그대로 기타+나머지로 처리
+        return OTHER_RAID_LABEL, raiddiff[len(OTHER_RAID_LABEL) + 1:].strip()
     for name in sorted(known_raid_names, key=len, reverse=True):
         if raiddiff == name:
             return name, ""
