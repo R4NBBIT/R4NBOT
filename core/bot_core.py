@@ -36,6 +36,7 @@ class MococoBot(commands.Bot):
             "cogs.game_recruit",
             "cogs.meetup",
             "cogs.schedule_check",
+            "cogs.announce",
             "cogs.help",
         ]
 
