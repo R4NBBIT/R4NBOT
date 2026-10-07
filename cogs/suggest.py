@@ -4,8 +4,11 @@
 DM으로 바로 전달됩니다. DM이 안 가는 경우(예: 계란이 봇과 서버를 공유하지 않거나 DM을 막아둔 경우)에
 대비해서 data/suggestions.json에도 같이 남겨둡니다.
 
-/건의사항답변: 계란 전용. 자동완성으로 아직 답장 안 한 건의사항을 골라서, 모달에 답변을 적으면
+/건의사항답변: 계란 전용. 자동완성으로 아직 처리 안 한 건의사항을 골라서, 모달에 답변을 적으면
 원래 작성자에게 DM으로 전달됩니다.
+
+/건의사항완료처리: 계란 전용. 답장을 보내지 않고, 그냥 처리 완료로 표시해서 목록에서 빼고
+싶을 때 씁니다 (예: 중복 건의, 반영할 필요 없는 건의 등).
 """
 import json
 import os
@@ -90,6 +93,8 @@ class SuggestionModal(discord.ui.Modal, title="건의사항"):
             "answered": False,
             "answer": None,
             "answered_at": None,
+            "closed": False,
+            "closed_at": None,
         }
 
         dm_text = (
@@ -189,11 +194,11 @@ class SuggestCog(commands.Cog):
     async def suggest(self, interaction: discord.Interaction):
         await interaction.response.send_modal(SuggestionModal(self.bot))
 
-    # ---------------- 건의사항 답변 (계란 전용) ----------------
+    # ---------------- 건의사항 답변 / 완료처리 (계란 전용) ----------------
     async def unanswered_autocomplete(self, interaction: discord.Interaction, current: str):
         current = current.lower()
         records = _load_suggestions()
-        unanswered = [r for r in records if not r.get("answered")]
+        unanswered = [r for r in records if not r.get("answered") and not r.get("closed")]
         unanswered.sort(key=lambda r: r.get("id", 0), reverse=True)
 
         choices = []
@@ -227,6 +232,43 @@ class SuggestCog(commands.Cog):
 
     @answer_suggestion.error
     async def answer_suggestion_error(self, interaction: discord.Interaction, error):
+        if isinstance(error, app_commands.CheckFailure):
+            if interaction.response.is_done():
+                await interaction.followup.send("⛔ 이 명령어는 계란 외에는 사용할 수 없습니다.", ephemeral=True)
+            else:
+                await interaction.response.send_message("⛔ 이 명령어는 계란 외에는 사용할 수 없습니다.", ephemeral=True)
+
+    @app_commands.command(
+        name="건의사항완료처리",
+        description="답장 없이 건의사항을 처리 완료로 표시해서 목록에서 뺍니다 (계란 전용)",
+    )
+    @app_commands.check(is_owner)
+    @app_commands.autocomplete(건의사항=unanswered_autocomplete)
+    @app_commands.describe(건의사항="처리 완료로 표시할 건의사항을 자동완성 목록에서 선택")
+    async def close_suggestion(self, interaction: discord.Interaction, 건의사항: str):
+        try:
+            suggestion_id = int(건의사항)
+        except ValueError:
+            await interaction.response.send_message("❌ 건의사항은 자동완성 목록에서 선택해주세요.", ephemeral=True)
+            return
+
+        records = _load_suggestions()
+        record = next((r for r in records if r.get("id") == suggestion_id), None)
+        if record is None:
+            await interaction.response.send_message("❌ 해당 건의사항을 찾을 수 없어요.", ephemeral=True)
+            return
+
+        record["closed"] = True
+        record["closed_at"] = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+        _save_suggestions(records)
+
+        await interaction.response.send_message(
+            f"✅ #{suggestion_id} 건의사항을 처리 완료로 표시했어요. (답변 DM은 안 보내졌어요)",
+            ephemeral=True,
+        )
+
+    @close_suggestion.error
+    async def close_suggestion_error(self, interaction: discord.Interaction, error):
         if isinstance(error, app_commands.CheckFailure):
             if interaction.response.is_done():
                 await interaction.followup.send("⛔ 이 명령어는 계란 외에는 사용할 수 없습니다.", ephemeral=True)
