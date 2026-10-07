@@ -39,6 +39,7 @@ class MococoBot(commands.Bot):
             "cogs.announce",
             "cogs.suggest",
             "cogs.help",
+            "cogs.recover_once",  # 1회용 레이드 데이터 복구 (복구 확인 후 이 줄과 cogs/recover_once.py 삭제 가능)
         ]
 
         for ext in extensions:
