@@ -39,6 +39,50 @@ def _pick_channel(guild: discord.Guild) -> discord.TextChannel | None:
     return candidates[0] if candidates else None
 
 
+class AnnounceModal(discord.ui.Modal, title="공지"):
+    content_input = discord.ui.TextInput(
+        label="공지 내용",
+        style=discord.TextStyle.paragraph,
+        placeholder="보낼 공지 내용을 입력하세요.",
+        max_length=1900,
+    )
+
+    def __init__(self, bot: commands.Bot, guilds: list[discord.Guild]):
+        super().__init__()
+        self.bot = bot
+        self.guilds = guilds
+
+    async def on_submit(self, interaction: discord.Interaction):
+        내용 = self.content_input.value.strip()
+        if not 내용:
+            await interaction.response.send_message("❌ 내용을 입력해주세요.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        text = f"📢 **공지**\n{내용}"
+        sent = 0
+        failed: list[str] = []
+
+        for guild in self.guilds:
+            channel = _pick_channel(guild)
+            if channel is None:
+                failed.append(f"{guild.name} (보낼 수 있는 채널 없음)")
+                continue
+            try:
+                await channel.send(text, allowed_mentions=_ALLOWED_MENTIONS)
+                sent += 1
+            except discord.Forbidden:
+                failed.append(f"{guild.name} (#{channel.name}, 권한 없음)")
+            except Exception as e:
+                failed.append(f"{guild.name} (#{channel.name}, {e})")
+
+        summary = f"✅ {sent}개 서버에 공지를 보냈어요."
+        if failed:
+            summary += "\n⚠️ 실패: " + ", ".join(failed)
+        await interaction.followup.send(summary, ephemeral=True)
+
+
 class AnnounceCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -55,18 +99,12 @@ class AnnounceCog(commands.Cog):
     @app_commands.command(name="공지", description="봇이 들어가 있는 서버로 공지를 보냅니다 (계란 전용)")
     @app_commands.check(is_owner)
     @app_commands.autocomplete(서버=guild_autocomplete)
-    @app_commands.describe(내용="보낼 공지 내용", 서버="보낼 서버 하나만 고르기 (비우면 전체 서버로 보냄)")
+    @app_commands.describe(서버="보낼 서버 하나만 고르기 (비우면 전체 서버로 보냄)")
     async def announce(
         self,
         interaction: discord.Interaction,
-        내용: app_commands.Range[str, 1, 1900],
         서버: str | None = None,
     ):
-        내용 = 내용.strip()
-        if not 내용:
-            await interaction.response.send_message("❌ 내용을 입력해주세요.", ephemeral=True)
-            return
-
         if 서버 is not None:
             try:
                 target_id = int(서버)
@@ -85,29 +123,7 @@ class AnnounceCog(commands.Cog):
         else:
             guilds = list(self.bot.guilds)
 
-        await interaction.response.defer(ephemeral=True)
-
-        text = f"📢 **공지**\n{내용}"
-        sent = 0
-        failed: list[str] = []
-
-        for guild in guilds:
-            channel = _pick_channel(guild)
-            if channel is None:
-                failed.append(f"{guild.name} (보낼 수 있는 채널 없음)")
-                continue
-            try:
-                await channel.send(text, allowed_mentions=_ALLOWED_MENTIONS)
-                sent += 1
-            except discord.Forbidden:
-                failed.append(f"{guild.name} (#{channel.name}, 권한 없음)")
-            except Exception as e:
-                failed.append(f"{guild.name} (#{channel.name}, {e})")
-
-        summary = f"✅ {sent}개 서버에 공지를 보냈어요."
-        if failed:
-            summary += "\n⚠️ 실패: " + ", ".join(failed)
-        await interaction.followup.send(summary, ephemeral=True)
+        await interaction.response.send_modal(AnnounceModal(self.bot, guilds))
 
     @announce.error
     async def announce_error(self, interaction: discord.Interaction, error):
