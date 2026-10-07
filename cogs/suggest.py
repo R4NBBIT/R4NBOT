@@ -3,6 +3,9 @@
 입력 내용은 명령어를 쓴 사람 본인에게만 보이고(모달 자체가 원래 그럼), 제출하면 계란(봇 소유자)에게
 DM으로 바로 전달됩니다. DM이 안 가는 경우(예: 계란이 봇과 서버를 공유하지 않거나 DM을 막아둔 경우)에
 대비해서 data/suggestions.json에도 같이 남겨둡니다.
+
+/건의사항답변: 계란 전용. 자동완성으로 아직 답장 안 한 건의사항을 골라서, 모달에 답변을 적으면
+원래 작성자에게 DM으로 전달됩니다.
 """
 import json
 import os
@@ -84,6 +87,9 @@ class SuggestionModal(discord.ui.Modal, title="건의사항"):
             "channel_id": channel_id,
             "content": content,
             "delivered": False,
+            "answered": False,
+            "answer": None,
+            "answered_at": None,
         }
 
         dm_text = (
@@ -110,6 +116,71 @@ class SuggestionModal(discord.ui.Modal, title="건의사항"):
         )
 
 
+def is_owner(interaction: discord.Interaction) -> bool:
+    return interaction.user.id == EGG_ID
+
+
+ANSWER_CONTENT_MAX_LENGTH = 1500
+
+
+class AnswerModal(discord.ui.Modal, title="건의사항 답변"):
+    answer_input = discord.ui.TextInput(
+        label="답변 내용",
+        style=discord.TextStyle.paragraph,
+        placeholder="건의사항을 보낸 사람에게 DM으로 전달됩니다.",
+        max_length=ANSWER_CONTENT_MAX_LENGTH,
+    )
+
+    def __init__(self, bot: commands.Bot, suggestion_id: int):
+        super().__init__()
+        self.bot = bot
+        self.suggestion_id = suggestion_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        answer = self.answer_input.value.strip()
+        if not answer:
+            await interaction.response.send_message("❌ 답변 내용을 입력해주세요.", ephemeral=True)
+            return
+
+        records = _load_suggestions()
+        record = next((r for r in records if r.get("id") == self.suggestion_id), None)
+        if record is None:
+            await interaction.response.send_message("❌ 해당 건의사항을 찾을 수 없어요 (이미 삭제됐을 수 있어요).", ephemeral=True)
+            return
+
+        now = datetime.now(KST)
+        reply_text = (
+            f"💬 **건의사항에 대한 답변이 도착했어요**\n"
+            f"{'-' * 20}\n"
+            f"[내가 보낸 건의사항]\n{record['content']}\n"
+            f"{'-' * 20}\n"
+            f"[답변]\n{answer}"
+        )
+        allowed = discord.AllowedMentions(everyone=False, roles=False, users=False)
+
+        try:
+            target = self.bot.get_user(record["user_id"]) or await self.bot.fetch_user(record["user_id"])
+            await target.send(reply_text, allowed_mentions=allowed)
+            sent = True
+        except Exception as e:
+            print(f"[건의사항답변] DM 전달 실패 (user_id={record['user_id']}): {e}")
+            sent = False
+
+        record["answered"] = True
+        record["answer"] = answer
+        record["answered_at"] = now.strftime("%Y-%m-%d %H:%M:%S")
+        _save_suggestions(records)
+
+        if sent:
+            await interaction.response.send_message(f"✅ #{self.suggestion_id} 건의사항에 답변을 전달했어요.", ephemeral=True)
+        else:
+            await interaction.response.send_message(
+                f"⚠️ #{self.suggestion_id} 답변은 기록했지만, DM 전달에는 실패했어요 "
+                f"(상대방이 봇과 서버를 공유하지 않거나 DM을 막아뒀을 수 있어요).",
+                ephemeral=True,
+            )
+
+
 class SuggestCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -117,6 +188,50 @@ class SuggestCog(commands.Cog):
     @app_commands.command(name="건의사항", description="계란봇에 대한 건의사항을 남깁니다 (나만 입력 내용을 볼 수 있어요)")
     async def suggest(self, interaction: discord.Interaction):
         await interaction.response.send_modal(SuggestionModal(self.bot))
+
+    # ---------------- 건의사항 답변 (계란 전용) ----------------
+    async def unanswered_autocomplete(self, interaction: discord.Interaction, current: str):
+        current = current.lower()
+        records = _load_suggestions()
+        unanswered = [r for r in records if not r.get("answered")]
+        unanswered.sort(key=lambda r: r.get("id", 0), reverse=True)
+
+        choices = []
+        for r in unanswered:
+            label = f"#{r['id']} {r.get('user_tag', '?')}: {r.get('content', '')}"
+            if len(label) > 100:
+                label = label[:99] + "…"
+            if current and current not in label.lower():
+                continue
+            choices.append(app_commands.Choice(name=label, value=str(r["id"])))
+        return choices[:25]
+
+    @app_commands.command(name="건의사항답변", description="받은 건의사항에 답변을 보냅니다 (계란 전용)")
+    @app_commands.check(is_owner)
+    @app_commands.autocomplete(건의사항=unanswered_autocomplete)
+    @app_commands.describe(건의사항="답변할 건의사항을 자동완성 목록에서 선택")
+    async def answer_suggestion(self, interaction: discord.Interaction, 건의사항: str):
+        try:
+            suggestion_id = int(건의사항)
+        except ValueError:
+            await interaction.response.send_message("❌ 건의사항은 자동완성 목록에서 선택해주세요.", ephemeral=True)
+            return
+
+        records = _load_suggestions()
+        record = next((r for r in records if r.get("id") == suggestion_id), None)
+        if record is None:
+            await interaction.response.send_message("❌ 해당 건의사항을 찾을 수 없어요.", ephemeral=True)
+            return
+
+        await interaction.response.send_modal(AnswerModal(self.bot, suggestion_id))
+
+    @answer_suggestion.error
+    async def answer_suggestion_error(self, interaction: discord.Interaction, error):
+        if isinstance(error, app_commands.CheckFailure):
+            if interaction.response.is_done():
+                await interaction.followup.send("⛔ 이 명령어는 계란 외에는 사용할 수 없습니다.", ephemeral=True)
+            else:
+                await interaction.response.send_message("⛔ 이 명령어는 계란 외에는 사용할 수 없습니다.", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
