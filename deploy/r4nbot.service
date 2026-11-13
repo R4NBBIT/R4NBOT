@@ -1,0 +1,24 @@
+[Unit]
+Description=R4NBOT Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=r4nbot
+Group=r4nbot
+WorkingDirectory=/opt/r4nbot
+ExecStart=/opt/r4nbot/venv/bin/python /opt/r4nbot/bot.py
+Restart=on-failure
+RestartSec=5
+# 연속으로 계속 죽는 비정상 상황이면 재시작을 포기하고 멈춤 (무한 재시작 방지)
+StartLimitIntervalSec=300
+StartLimitBurst=10
+Environment=PYTHONUNBUFFERED=1
+
+# 약간의 보호 설정 (필요시 제거 가능)
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

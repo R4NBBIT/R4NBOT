@@ -1,6 +1,6 @@
 """레이드 포럼 채널 관리 모듈 (로컬 저장 버전).
 
-core/tts_channels.py 와 동일한 패턴: 서버(guild)당 채널 하나만 저장합니다.
+서버(guild)당 채널 하나만 저장합니다.
 """
 import json
 import os

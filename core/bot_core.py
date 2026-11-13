@@ -13,7 +13,6 @@ class MococoBot(commands.Bot):
         intents.members = True
         intents.messages = True
         intents.message_content = True
-        intents.voice_states = True
 
         super().__init__(
             command_prefix="!",
@@ -30,7 +29,6 @@ class MococoBot(commands.Bot):
             "cogs.clean",
             "cogs.cleargold",
             "cogs.menu",
-            "cogs.tts",
             "cogs.raid_schedule",
             "cogs.raid_notify",
             "cogs.game_recruit",

@@ -1,6 +1,6 @@
 # 🐣 계란봇
 
-계란이 필요한 기능들을 모아놓은 봇! 메시지 청소, 로스트아크 레이드 클리어 골드 조회, 레이드 일정 관리(모집·참가신청·대기열·고정공격대), 점심 메뉴 추천, TTS(채팅 읽어주기) 기능을 제공합니다.
+계란이 필요한 기능들을 모아놓은 봇! 메시지 청소, 로스트아크 레이드 클리어 골드 조회, 레이드 일정 관리(모집·참가신청·대기열·고정공격대), 점심 메뉴 추천 기능을 제공합니다.
 
 ## 🚀 초대 링크
 
@@ -15,8 +15,6 @@ EGG-BOT/
 │  ├─ bot_core.py              # discord.Bot 서브클래스, cog 로더
 │  ├─ config.py                # .env 로드 + 환경변수/상수 정의
 │  ├─ menu.txt                 # 점메추 공통 메뉴 목록 (모든 서버 공유, menu.py가 읽고 씀)
-│  ├─ tts_channels.py          # 서버별 TTS 채널 저장/로드
-│  ├─ tts_engine_manager.py    # 사용자별 TTS 목소리 엔진 저장/로드
 │  ├─ raid_data.py             # 레이드/난이도/클리어 골드/입장레벨 공용 데이터 (cleargold.py, raid_schedule.py 공유)
 │  ├─ raid_channel.py          # 서버별 레이드/종겜/정모 포럼 채널(각 1개) 저장/로드
 │  ├─ raid_notify.py           # 서버별 (레이드,난이도) 개인 알림 구독 저장/로드
@@ -25,7 +23,6 @@ EGG-BOT/
 │  ├─ clean.py                 # /청소
 │  ├─ cleargold.py             # /클골, /레이드추가, /레이드수정, /레이드삭제
 │  ├─ menu.py                  # /점메추, /메뉴추가, /메뉴삭제, /메뉴판
-│  ├─ tts.py                   # /tts, /join, /leave, /엔진 등
 │  ├─ raid_schedule.py         # /레이드, /레이드채널, /레이드채널해제, /레이드채널정보, /고정공격대생성 등
 │  ├─ raid_notify.py           # /레이드알림추가, /레이드알림삭제, /레이드알림목록
 │  ├─ announce.py              # /공지
@@ -33,13 +30,7 @@ EGG-BOT/
 │  ├─ meetup.py                # /정모, /정모채널, /정모채널해제, /정모채널정보
 │  ├─ schedule_check.py        # /일정확인 (레이드 + 종겜 + 정모 참가 일정 통합 조회)
 │  └─ suggest.py               # /건의사항
-├─ handler/
-│  └─ tts.py                   # TTS 실제 로직 (음성 연결, 엔진 호출, 재생 큐 등)
-├─ utils/
-│  └─ tts/                     # TTS 오디오 파일 저장소 (아래 참고)
 ├─ data/                       # 런타임에 자동 생성되는 저장 파일 (아래 참고)
-│  ├─ tts_channels.json
-│  ├─ tts_engines.json
 │  ├─ raid_gold.json
 │  ├─ raid_periods.json
 │  ├─ raid_channel.json
@@ -51,21 +42,10 @@ EGG-BOT/
 │  ├─ fixed_parties.json
 │  ├─ raid_notify.json
 │  └─ guild_menus.json
+├─ deploy/
+│  └─ r4nbot.service           # systemd 서비스 등록용 템플릿 (아래 참고)
 └─ requirements.txt
 ```
-
-### `utils/tts/` 폴더가 필요한 이유
-
-TTS 커스텀 사운드(예: `[기분좋은향기]`, `[오셨군요]` 같은 효과음)의 실제 `.mp3` 파일이 저장되는 곳입니다. `handler/tts.py`의 `AUDIO_BASE_PATH`가 이 경로를 가리킵니다.
-
-- `utils/tts/*.mp3` — 모든 서버에서 공통으로 쓰는 기본 효과음 (`mokoko.mp3`, `welcome.mp3`, `hello.mp3`, `escape.mp3`)
-- `utils/tts/<guild_id>/*.mp3` — `/tts커스텀` 명령어로 각 서버가 개별 등록한 커스텀 사운드. 서버별 인덱스 파일(`custom_sounds.json`)도 이 하위 폴더에 함께 생성됩니다.
-
-코드가 아니라 오디오 데이터가 실제로 들어있는 폴더라서, 다른 유틸 스크립트처럼 지워도 되는 게 아니라 반드시 있어야 하는 리소스 폴더입니다.
-
-폴더 자체는 미리 안 만드셔도 됩니다. `utils/tts/`, `utils/tts/<guild_id>/` 둘 다 필요한 시점(예: `/tts커스텀`으로 서버가 처음 사운드를 추가할 때)에 코드가 `os.makedirs(..., exist_ok=True)`로 자동 생성합니다.
-
-다만 기본 효과음 4개(`mokoko.mp3`, `welcome.mp3`, `hello.mp3`, `escape.mp3`)는 자동으로 생기지 않습니다. 이건 데이터가 아니라 실제 음원 파일이라 코드가 만들어낼 수 없으므로, `utils/tts/` 경로에 직접 업로드해둬야 `[기분좋은향기]` 등 기본 태그가 정상 재생됩니다. 서버별 커스텀 사운드는 `/tts커스텀` 명령어로 봇 안에서 바로 추가되므로 별도 업로드가 필요 없습니다.
 
 ### `data/` 폴더 — 직접 안 만드셔도 됩니다
 
@@ -73,8 +53,6 @@ TTS 커스텀 사운드(예: `[기분좋은향기]`, `[오셨군요]` 같은 효
 
 | 파일 | 만드는 시점 | 담당 |
 |---|---|---|
-| `tts_channels.json` | `/tts` 명령어로 채널을 처음 지정할 때 | `core/tts_channels.py` |
-| `tts_engines.json` | `/엔진` 명령어로 목소리를 처음 지정할 때 | `core/tts_engine_manager.py` |
 | `raid_gold.json` | 봇 최초 구동 시 (하드코딩된 기본 레이드 데이터로 자동 생성) | `core/raid_data.py` |
 | `raid_periods.json` | 봇 최초 구동 시 (이벤트 레이드 기본 기간으로 자동 생성) | `core/raid_data.py` |
 | `raid_channel.json` | `/레이드채널` 명령어로 포럼 채널을 처음 지정할 때 | `core/raid_channel.py` |
@@ -112,16 +90,57 @@ LOSTARK_API_KEY=
 
 ```
 discord.py==2.7.1
-PyNaCl>=1.5.0
-davey
 httpx>=0.27.0
 aiohttp>=3.9.0
-navertts
-edge-tts>=6.1.0
-imageio-ffmpeg>=0.5.0
 ```
 
-`davey`는 Discord의 음성 E2EE(DAVE) 프로토콜 지원에 필요하고, `imageio-ffmpeg`는 시스템에 ffmpeg가 없어도 정적 바이너리를 자체적으로 받아와 TTS 오디오 변환에 사용됩니다. `httpx`는 TTS의 Lavalink 연동뿐 아니라 레이드 참가신청 시 로스트아크 API 호출(`core/lostark_api.py`)에도 사용됩니다.
+`httpx`는 레이드 참가신청 시 로스트아크 API 호출(`core/lostark_api.py`)에 사용됩니다.
+
+## 🖥️ systemd로 등록하기 (VM에서 죽어도 자동 재시작)
+
+VM(예: GCP `e2-micro`)처럼 직접 리눅스 서버에서 돌릴 때는, 봇 프로세스가 죽거나 서버가 재부팅돼도
+자동으로 다시 떠있도록 `systemd` 서비스로 등록하는 걸 권장합니다. `deploy/r4nbot.service`에
+템플릿이 있습니다.
+
+1. 코드를 올려둘 경로(예: `/opt/r4nbot`)에 저장소를 클론하고, 그 안에 가상환경을 만들어 의존성을 설치합니다.
+   ```bash
+   sudo git clone https://github.com/R4NBBIT/R4NBOT.git /opt/r4nbot
+   cd /opt/r4nbot
+   python3 -m venv venv
+   ./venv/bin/pip install -r requirements.txt
+   ```
+2. `/opt/r4nbot/.env`를 만들고 위 환경변수들을 채웁니다.
+3. 봇 전용 시스템 사용자를 만들고(루트로 안 돌리는 게 안전해요), 그 경로의 소유자를 바꿔줍니다.
+   ```bash
+   sudo useradd --system --no-create-home r4nbot
+   sudo chown -R r4nbot:r4nbot /opt/r4nbot
+   ```
+4. `deploy/r4nbot.service`를 `/etc/systemd/system/r4nbot.service`로 복사합니다. 경로(`/opt/r4nbot`)나
+   사용자(`r4nbot`)를 다르게 썼다면 파일 안의 값도 맞게 수정해주세요.
+   ```bash
+   sudo cp deploy/r4nbot.service /etc/systemd/system/r4nbot.service
+   ```
+5. 서비스를 등록하고 바로 시작합니다.
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now r4nbot
+   ```
+6. 상태/로그 확인:
+   ```bash
+   sudo systemctl status r4nbot      # 현재 상태
+   sudo journalctl -u r4nbot -f      # 실시간 로그 (Ctrl+C로 종료)
+   ```
+7. 코드를 업데이트한 뒤에는 `git pull` 후 재시작하면 됩니다.
+   ```bash
+   cd /opt/r4nbot && sudo -u r4nbot git pull
+   sudo systemctl restart r4nbot
+   ```
+
+이렇게 등록해두면 `Restart=on-failure`로 봇 프로세스가 죽어도 5초 뒤 자동으로 다시 뜨고,
+`WantedBy=multi-user.target`로 VM이 재부팅돼도 봇이 자동으로 다시 시작됩니다. 다만 짧은 시간에
+너무 자주 죽으면(5분 안에 10번) systemd가 재시작을 포기하고 멈추도록 안전장치가 걸려 있어요
+(`StartLimitIntervalSec`/`StartLimitBurst`) — 이 경우엔 `journalctl -u r4nbot`로 원인을 먼저 확인하고
+`sudo systemctl reset-failed r4nbot && sudo systemctl start r4nbot`으로 다시 시작하면 됩니다.
 
 ## 🎮 명령어 목록
 
@@ -273,19 +292,6 @@ imageio-ffmpeg>=0.5.0
 - 답변도 같은 방식이에요 — 원래 작성자가 봇과 서버를 공유하지 않거나 DM을 막아뒀으면 전달이 실패할 수 있고, 그 경우 계란에게 안내 메시지가 떠요.
 - `/건의사항답변`과 `/건의사항완료처리`의 자동완성 목록은 둘 다 "아직 처리 안 한" 건의사항만 보여줘요 — 답변을 보냈거나 완료 처리한 건은 더 이상 안 보여요.
 
-### TTS
-
-| 명령어 | 설명 | 권한 |
-|---|---|---|
-| `/tts <채널>` | TTS 채널로 지정 | 관리자 |
-| `/tts해제` | TTS 채널 지정 해제 | 관리자 |
-| `/tts정보` | 현재 TTS 채널 확인 | 전체 |
-| `/tts해결` | TTS 상태 오류 시 초기화 | 관리자 |
-| `/join` | 현재 음성 채널로 봇 소환 + 이 텍스트 채널을 임시 TTS 채널로 지정 | 전체 |
-| `/leave` | 음성 채널에서 나가고 임시 TTS 채널 해제 | 전체 |
-| `/엔진 [목소리]` | TTS 목소리 엔진 조회/설정 | 전체 |
-| `/tts커스텀 [옵션] [별명] [파일]` | 서버별 커스텀 효과음 추가/삭제/조회 | 관리자 |
-
 ## 🗒️ 참고
 
 - 계란 전용 명령어는 `.env`의 `EGG_ID`(봇 소유자 디스코드 ID)와 명령어 실행자 ID를 비교하는 방식으로 권한을 체크합니다 (`core/config.py`에서 로드, `cogs/cleargold.py`·`cogs/menu.py`에서 사용).
@@ -293,4 +299,4 @@ imageio-ffmpeg>=0.5.0
 
 ## 🙏 참고
 
-TTS, 레이드 일정 관련 코드는 [MococoBot](https://github.com/Over-N/MococoBot/)을 참고했습니다.
+레이드 일정 관련 코드는 [MococoBot](https://github.com/Over-N/MococoBot/)을 참고했습니다.
