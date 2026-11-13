@@ -43,7 +43,8 @@ EGG-BOT/
 │  ├─ raid_notify.json
 │  └─ guild_menus.json
 ├─ deploy/
-│  └─ r4nbot.service           # systemd 서비스 등록용 템플릿 (아래 참고)
+│  ├─ r4nbot.service           # systemd 서비스 등록용 템플릿 (아래 참고)
+│  └─ auto_deploy.sh           # push하면 자동 pull+재시작 해주는 cron 스크립트 (아래 참고)
 └─ requirements.txt
 ```
 
@@ -130,7 +131,8 @@ VM(예: GCP `e2-micro`)처럼 직접 리눅스 서버에서 돌릴 때는, 봇 �
    sudo systemctl status r4nbot      # 현재 상태
    sudo journalctl -u r4nbot -f      # 실시간 로그 (Ctrl+C로 종료)
    ```
-7. 코드를 업데이트한 뒤에는 `git pull` 후 재시작하면 됩니다.
+7. 코드를 업데이트한 뒤에는 `git pull` 후 재시작하면 됩니다. (아래 "push하면 자동으로 배포되게
+   하기"를 설정해두면 이 단계는 수동으로 안 해도 됩니다.)
    ```bash
    cd /opt/r4nbot && sudo -u r4nbot git pull
    sudo systemctl restart r4nbot
@@ -141,6 +143,34 @@ VM(예: GCP `e2-micro`)처럼 직접 리눅스 서버에서 돌릴 때는, 봇 �
 너무 자주 죽으면(5분 안에 10번) systemd가 재시작을 포기하고 멈추도록 안전장치가 걸려 있어요
 (`StartLimitIntervalSec`/`StartLimitBurst`) — 이 경우엔 `journalctl -u r4nbot`로 원인을 먼저 확인하고
 `sudo systemctl reset-failed r4nbot && sudo systemctl start r4nbot`으로 다시 시작하면 됩니다.
+
+## 🔄 push하면 자동으로 배포되게 하기 (cron)
+
+깃허브에 push할 때마다 수동으로 `git pull` + 재시작을 하지 않아도 되도록, VM에서 cron으로
+주기적으로 "새 커밋 있으면 pull 받고 재시작"을 돌릴 수 있습니다. `deploy/auto_deploy.sh`가
+그 스크립트입니다. VM이 깃허브로 나가서 확인만 하는 방식이라 포트를 따로 열 필요가 없어요.
+
+1. 스크립트 안의 `REPO_DIR`(기본 `/opt/r4nbot`), `REPO_USER`(기본 `r4nbot`), `SERVICE_NAME`
+   (기본 `r4nbot`)이 실제 환경과 다르면 맞게 수정합니다. (위 systemd 설정에서 쓴 값과 같으면
+   손댈 필요 없음)
+2. root의 crontab에 등록합니다. (systemd 서비스를 재시작하려면 root 권한이 필요해서, git/pip
+   작업만 스크립트 안에서 `sudo -u r4nbot`로 내려서 실행함)
+   ```bash
+   sudo crontab -e
+   ```
+   아래 줄을 추가 (2분마다 확인, 변경 없으면 아무 일도 안 하고 조용히 끝남):
+   ```
+   */2 * * * * /opt/r4nbot/deploy/auto_deploy.sh >> /var/log/r4nbot-deploy.log 2>&1
+   ```
+3. 잘 등록됐는지 로그로 확인:
+   ```bash
+   tail -f /var/log/r4nbot-deploy.log
+   ```
+   이 레포에 새 커밋을 push하면, 최대 2분 안에 로그에 "새 커밋 발견 → pull 완료 → 재시작 완료"가
+   찍히고 봇이 새 코드로 다시 뜹니다.
+
+`requirements.txt`가 바뀐 커밋이면 재시작 전에 `pip install -r requirements.txt`도 자동으로 다시
+실행해줍니다. 두 배포 스크립트가 동시에 겹쳐 돌지 않도록 락 파일로 막아두었습니다.
 
 ## 🎮 명령어 목록
 
