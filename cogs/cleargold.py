@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 
 from core.config import EGG_ID
@@ -19,6 +19,11 @@ from core.raid_data import (
 
 CLEAR_PERIOD_WORDS = ("없음", "삭제", "해제")
 
+# 기간이 있는(= 종료일이 지정된) 레이드가 종료된 뒤 이 주기로 자동 삭제 여부를 확인함.
+# 기간 자체(raid_periods.json)는 지우지 않음 — 고정공격대가 "기간 밖 회차는 건너뛰기"를
+# 판단할 때 계속 필요해서, 삭제되는 건 클리어 골드 데이터(raid_gold.json)뿐임.
+EXPIRE_CLEANUP_INTERVAL_HOURS = 1
+
 
 def is_owner(interaction: discord.Interaction) -> bool:
     return interaction.user.id == EGG_ID
@@ -28,6 +33,43 @@ class ClearGoldCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.raid_data: dict[tuple[str, str], tuple] = load_raid_data()
+        self.expire_cleanup_loop.start()
+
+    def cog_unload(self) -> None:
+        self.expire_cleanup_loop.cancel()
+
+    # ---------------- 기간 종료된 레이드 자동 삭제 ----------------
+    def _sync_other_cogs(self, removed_keys: list[tuple[str, str]]) -> None:
+        """다른 cog들도 각자 raid_data 사본을 들고 있어서, 삭제된 조합을 거기서도 지워줌
+        (안 그러면 봇을 재시작하기 전까지 그쪽에는 계속 남아있게 됨)."""
+        for cog_name in ("RaidScheduleCog", "RaidNotifyCog"):
+            cog = self.bot.get_cog(cog_name)
+            other_data = getattr(cog, "raid_data", None) if cog else None
+            if not isinstance(other_data, dict):
+                continue
+            for key in removed_keys:
+                other_data.pop(key, None)
+
+    @tasks.loop(hours=EXPIRE_CLEANUP_INTERVAL_HOURS)
+    async def expire_cleanup_loop(self) -> None:
+        removed = [
+            key for key in self.raid_data
+            if get_period(key)[1] is not None and is_expired(key)
+        ]
+        if not removed:
+            return
+
+        for key in removed:
+            del self.raid_data[key]
+        save_raid_data(self.raid_data)
+        self._sync_other_cogs(removed)
+
+        for raid, diff in removed:
+            print(f"[레이드데이터] 기간 종료로 자동 삭제: {raid} ({diff})")
+
+    @expire_cleanup_loop.before_loop
+    async def before_expire_cleanup_loop(self) -> None:
+        await self.bot.wait_until_ready()
 
     # ---------------- 자동완성 (항상 최신 데이터 기준) ----------------
     def _visible_keys(self, interaction: discord.Interaction):
