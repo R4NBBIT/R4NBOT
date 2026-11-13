@@ -5,11 +5,15 @@ import random
 from collections import Counter
 from pathlib import Path
 
-from core.config import EGG_ID
+from core.config import EGG_ID, MENU_MANAGER_IDS
 
 
 def is_owner(interaction: discord.Interaction) -> bool:
     return interaction.user.id == EGG_ID
+
+
+def is_menu_manager(interaction: discord.Interaction) -> bool:
+    return interaction.user.id == EGG_ID or interaction.user.id in MENU_MANAGER_IDS
 
 
 # =========================
@@ -172,8 +176,8 @@ class MenuCog(commands.Cog):
         await self.send_menu(interaction)
 
     # -------------------------
-    @app_commands.command(name="메뉴추가", description="메뉴 추가 (계란 전용)")
-    @app_commands.check(is_owner)
+    @app_commands.command(name="메뉴추가", description="메뉴 추가 (계란/메뉴 관리자 전용)")
+    @app_commands.check(is_menu_manager)
     async def add_menu(self, interaction: discord.Interaction, menu: str):
         menu = menu.strip()
         menus = self.load_menus()
@@ -193,8 +197,8 @@ class MenuCog(commands.Cog):
         )
 
     # -------------------------
-    @app_commands.command(name="메뉴삭제", description="메뉴 삭제 (계란 전용)")
-    @app_commands.check(is_owner)
+    @app_commands.command(name="메뉴삭제", description="메뉴 삭제 (계란/메뉴 관리자 전용)")
+    @app_commands.check(is_menu_manager)
     async def remove_menu(self, interaction: discord.Interaction, menu: str):
         menu = menu.strip()
         menus = self.load_menus()
@@ -237,10 +241,10 @@ class MenuCog(commands.Cog):
     # -------------------------
     @add_menu.error
     @remove_menu.error
-    async def owner_only_error(self, interaction: discord.Interaction, error):
+    async def menu_manager_only_error(self, interaction: discord.Interaction, error):
         if isinstance(error, app_commands.CheckFailure):
             await interaction.response.send_message(
-                "⛔ 이 명령어는 계란 외에는 사용할 수 없습니다.",
+                "⛔ 이 명령어는 계란이나 메뉴 관리자만 사용할 수 있습니다.",
                 ephemeral=True
             )
 

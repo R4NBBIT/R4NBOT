@@ -54,3 +54,17 @@ except ValueError:
 
 if EGG_ID == 0:
     print("⚠️ .env에 EGG_ID가 설정되어 있지 않아요. 계란 전용 명령어가 아무에게도 허용되지 않습니다.")
+
+# 메뉴 관리(메뉴추가/메뉴삭제) 권한을 계란 외에 추가로 허용할 디스코드 사용자 ID 목록.
+# .env에 MENU_MANAGER_IDS=아이디1,아이디2 형태로 콤마로 구분해서 설정.
+_menu_manager_ids_raw = os.getenv("MENU_MANAGER_IDS", "").strip()
+MENU_MANAGER_IDS: set[int] = set()
+if _menu_manager_ids_raw:
+    for part in _menu_manager_ids_raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            MENU_MANAGER_IDS.add(int(part))
+        except ValueError:
+            print(f"⚠️ MENU_MANAGER_IDS 값 중 올바른 숫자가 아닌 항목이 있어요: {part!r} -> 무시합니다.")
