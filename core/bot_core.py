@@ -35,7 +35,7 @@ class MococoBot(commands.Bot):
             "cogs.meetup",
             "cogs.schedule_check",
             "cogs.announce",
-            "cogs.suggest",
+            # "cogs.suggest",  # 건의사항 기능 비활성화 (코드는 유지, 명령어 등록만 중단)
             "cogs.help",
         ]
 
